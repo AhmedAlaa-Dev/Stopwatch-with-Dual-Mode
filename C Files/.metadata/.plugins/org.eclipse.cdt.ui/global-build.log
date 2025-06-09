@@ -1,0 +1,37 @@
+23:19:00 **** Incremental Build of configuration Debug for project Interface1_Project ****
+make all 
+Building file: ../Interface1_Project.c
+Invoking: AVR Compiler
+avr-gcc -Wall -g2 -gstabs -O0 -fpack-struct -fshort-enums -ffunction-sections -fdata-sections -std=gnu99 -funsigned-char -funsigned-bitfields -mmcu=atmega32 -DF_CPU=16000000UL -MMD -MP -MF"Interface1_Project.d" -MT"Interface1_Project.o" -c -o "Interface1_Project.o" "../Interface1_Project.c"
+In file included from ../Interface1_Project.c:2:
+c:/winavr-20100110/lib/gcc/../../avr/include/util/delay.h:90:3: warning: #warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+Finished building: ../Interface1_Project.c
+ 
+Building target: Interface1_Project.elf
+Invoking: AVR C Linker
+avr-gcc -Wl,-Map,Interface1_Project.map -mmcu=atmega32 -o "Interface1_Project.elf"  ./Interface1_Project.o   
+Finished building target: Interface1_Project.elf
+ 
+Invoking: AVR Create Extended Listing
+avr-objdump -h -S Interface1_Project.elf  >"Interface1_Project.lss"
+Finished building: Interface1_Project.lss
+ 
+Create Flash image (ihex format)
+avr-objcopy -R .eeprom -R .fuse -R .lock -R .signature -O ihex Interface1_Project.elf  "Interface1_Project.hex"
+Finished building: Interface1_Project.hex
+ 
+Invoking: Print Size
+avr-size --format=avr --mcu=atmega32 Interface1_Project.elf
+AVR Memory Usage
+----------------
+Device: atmega32
+
+Program:    8614 bytes (26.3% Full)
+(.text + .data + .bootloader)
+
+Data:         19 bytes (0.9% Full)
+(.data + .bss + .noinit)
+
+
+Finished building: sizedummy
+ 

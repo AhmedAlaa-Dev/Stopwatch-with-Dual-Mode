@@ -1,0 +1,306 @@
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+
+// Variables for time display
+unsigned char hours = 0;
+unsigned char minutes = 0;
+unsigned char seconds = 0;
+
+// Flags for button state
+unsigned char TimerState_pushbutton_flag = 0;
+unsigned char TimerState_flag = 0; // 0 - Increment, 1 - Decrement
+
+// Flags for time adjustment
+unsigned char Sec_Decrement_flag = 0;
+unsigned char Sec_Increment_flag = 0;
+unsigned char Min_Decrement_flag = 0;
+unsigned char Min_Increment_flag = 0;
+unsigned char H_Decrement_flag = 0;
+unsigned char H_Increment_flag = 0;
+
+void display_time(unsigned char h, unsigned char m, unsigned char s);
+void handle_time_adjustment(void);
+void handle_timer_state_toggle(void);
+
+// INT0 (RESET) Initialization
+void INT0_INIT(void) {
+    DDRD &= ~(1 << PD2);  // Set PD2 as input
+    PORTD |= (1 << PD2);  // Enable pull-up resistor on PD2
+
+    GICR |= (1 << INT0);  // Enable INT0
+    MCUCR |= (1 << ISC01);  // Falling edge triggers interrupt
+    SREG |= (1 << 7);  // Enable global interrupts
+}
+
+ISR(INT0_vect) {
+    hours = 0;
+    minutes = 0;
+    seconds = 0;
+}
+
+// Timer1 Initialization
+
+void init_timer1(void) {
+    TCNT1 = 0;
+    TCCR1B |= (1 << WGM12);  // CTC mode
+    TCCR1B |= (1 << CS12) | (1 << CS10);  // Prescaler of 1024 (starts the timer)
+    OCR1A = 15625;  // Compare match value for 1 second
+    TIMSK |= (1 << OCIE1A);  // Enable Timer1 Compare A interrupt
+    SREG |= (1 << 7);  // Enable global interrupts
+}
+
+ISR(TIMER1_COMPA_vect) {
+    if (TimerState_flag == 0) {
+        seconds++;
+        if (seconds == 60) {
+            seconds = 0;
+            minutes++;
+        }
+        if (minutes == 60) {
+            minutes = 0;
+            hours++;
+        }
+        if (hours == 100) {
+            hours = 0;
+        }
+    } else if (TimerState_flag == 1) {
+        if (seconds > 0) {
+            seconds--;
+        } else if (minutes > 0 || hours > 0) {
+            seconds = 59;
+            if (minutes > 0) {
+                minutes--;
+            } else if (hours > 0) {
+                hours--;
+                minutes = 59;
+            }
+        }
+    }
+}
+
+// INT1 (PAUSE) Initialization
+void INT1_INIT(void) {
+    DDRD &= ~(1 << PD3);  // Set PD3 as input
+    GICR |= (1 << INT1);  // Enable INT1
+    MCUCR |= (1 << ISC11) | (1 << ISC10);  // Rising edge triggers interrupt
+    SREG |= (1 << 7);  // Enable global interrupts
+}
+
+ISR(INT1_vect) {
+    TCCR1B &= ~(1 << CS12) & ~(1 << CS11) & ~(1 << CS10);  // Stop Timer1
+}
+
+// INT2 (RESUME) Initialization
+void INT2_INIT(void) {
+    DDRB &= ~(1 << PB2);  // Set PB2 as input
+    PORTB |= (1 << PB2);  // Enable pull-up resistor on PB2
+    MCUCSR &= ~(1 << ISC2);  // Falling edge triggers interrupt
+    GICR |= (1 << INT2);  // Enable INT2
+    SREG |= (1 << 7);  // Enable global interrupts
+}
+
+ISR(INT2_vect) {
+    TCCR1B |= (1 << CS12) | (1 << CS10);  // Resume Timer1
+}
+
+int main(void) {
+    // Set up display, buzzer, LEDs, and buttons
+    DDRC |= 0x0F;  // Set first 4 bits of PORTC as output
+    PORTC &= 0xF0;  // Clear PC0-PC3
+
+    DDRA |= 0x3F;  // Set all bits of PORTA as output
+
+    DDRD |= (1 << PD0);  // PD0 - Buzzer output
+    PORTD &= ~(1 << PD0);  // Initially off
+
+    DDRD |= (1 << PD4);  // PD4 - Red LED output (Counting up)
+    PORTD |= (1 << PD4);  // Initially on
+
+    DDRD |= (1 << PD5);  // PD5 - Yellow LED output (Counting down)
+    PORTD &= ~(1 << PD5);  // Initially off
+
+    // Seconds Adjustment Buttons
+    DDRB &= ~(1 << PB5);
+    PORTB |= (1 << PB5);  // Internal pull-up for Decrement
+    DDRB &= ~(1 << PB6);
+    PORTB |= (1 << PB6);  // Internal pull-up for Increment
+
+    // Minutes Adjustment Buttons
+    DDRB &= ~(1 << PB3);
+    PORTB |= (1 << PB3);  // Internal pull-up for Decrement
+    DDRB &= ~(1 << PB4);
+    PORTB |= (1 << PB4);  // Internal pull-up for Increment
+
+    // Hours Adjustment Buttons
+    DDRB &= ~(1 << PB0);
+    PORTB |= (1 << PB0);  // Internal pull-up for Decrement
+    DDRB &= ~(1 << PB1);
+    PORTB |= (1 << PB1);  // Internal pull-up for Increment
+
+    // INT0 - Reset Timer
+    INT0_INIT();
+
+    // Timer1 with prescaler of 1024
+    init_timer1();
+
+    // INT1 - Pause Timer
+    INT1_INIT();
+
+    // INT2 - Resume Timer
+    INT2_INIT();
+
+    // Timer State Button (Increment/Decrement)
+    DDRB &= ~(1 << PB7);
+    PORTB |= (1 << PB7);  // Internal pull-up
+
+    while (1) {
+        display_time(hours, minutes, seconds);
+
+        // Buzzer Activation
+        if (hours == 0 && minutes == 0 && seconds == 0 && TimerState_flag == 1) {
+            PORTD |= (1 << PD0);  // Activate buzzer
+        } else {
+            PORTD &= ~(1 << PD0);  // Deactivate buzzer
+        }
+
+        // Time Adjustment for Seconds, Minutes, and Hours
+        handle_time_adjustment();
+        handle_timer_state_toggle();
+    }
+}
+
+void display_time(unsigned char h, unsigned char m, unsigned char s) {
+    PORTC = s % 10;
+    PORTA |= 0x20;
+    _delay_ms(3);
+    PORTA &= ~0x20;
+
+    PORTC = s / 10;
+    PORTA |= 0x10;
+    _delay_ms(3);
+    PORTA &= ~0x10;
+
+    PORTC = m % 10;
+    PORTA |= 0x08;
+    _delay_ms(3);
+    PORTA &= ~0x08;
+
+    PORTC = m / 10;
+    PORTA |= 0x04;
+    _delay_ms(3);
+    PORTA &= ~0x04;
+
+    PORTC = h % 10;
+    PORTA |= 0x02;
+    _delay_ms(3);
+    PORTA &= ~0x02;
+
+    PORTC = h / 10;
+    PORTA |= 0x01;
+    _delay_ms(3);
+    PORTA &= ~0x01;
+}
+
+void handle_time_adjustment(void) {
+    // Seconds Increment
+    if (!(PINB & (1 << PB6))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB6)) && Sec_Increment_flag == 0) {
+            seconds++;
+            if (seconds == 60) seconds = 0;
+            Sec_Increment_flag = 1;
+        }
+    } else {
+        Sec_Increment_flag = 0;
+    }
+
+    // Seconds Decrement
+    if (!(PINB & (1 << PB5))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB5)) && Sec_Decrement_flag == 0) {
+            if (seconds > 0) {
+                seconds--;
+            } else {
+                seconds = 59;
+            }
+            Sec_Decrement_flag = 1;
+        }
+    } else {
+        Sec_Decrement_flag = 0;
+    }
+
+    // Minutes Increment
+    if (!(PINB & (1 << PB4))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB4)) && Min_Increment_flag == 0) {
+            minutes++;
+            if (minutes == 60) minutes = 0;
+            Min_Increment_flag = 1;
+        }
+    } else {
+        Min_Increment_flag = 0;
+    }
+
+    // Minutes Decrement
+    if (!(PINB & (1 << PB3))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB3)) && Min_Decrement_flag == 0) {
+            if (minutes > 0) {
+                minutes--;
+            } else {
+                minutes = 59;
+            }
+            Min_Decrement_flag = 1;
+        }
+    } else {
+        Min_Decrement_flag = 0;
+    }
+
+    // Hours Increment
+    if (!(PINB & (1 << PB1))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB1)) && H_Increment_flag == 0) {
+            hours++;
+            if (hours == 100) hours = 0;
+            H_Increment_flag = 1;
+        }
+    } else {
+        H_Increment_flag = 0;
+    }
+
+    // Hours Decrement
+    if (!(PINB & (1 << PB0))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB0)) && H_Decrement_flag == 0) {
+            if (hours > 0) {
+                hours--;
+            } else {
+                hours = 99;
+            }
+            H_Decrement_flag = 1;
+        }
+    } else {
+        H_Decrement_flag = 0;
+    }
+}
+
+void handle_timer_state_toggle(void) {
+    // Toggle between Increment and Decrement modes
+    if (!(PINB & (1 << PB7))) {
+        _delay_ms(30);
+        if (!(PINB & (1 << PB7)) && TimerState_pushbutton_flag == 0) {
+            TimerState_flag = !TimerState_flag;  // Toggle the timer state
+            if (TimerState_flag == 1) {
+                PORTD &= ~(1 << PD4);  // Turn off Red LED
+                PORTD |= (1 << PD5);  // Turn on Yellow LED
+            } else {
+                PORTD |= (1 << PD4);  // Turn on Red LED
+                PORTD &= ~(1 << PD5);  // Turn off Yellow LED
+            }
+            TimerState_pushbutton_flag = 1;
+        }
+    } else {
+        TimerState_pushbutton_flag = 0;
+    }
+}
