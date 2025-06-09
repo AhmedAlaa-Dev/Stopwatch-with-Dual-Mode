@@ -47,17 +47,6 @@ A versatile digital stopwatch with increment and countdown modes featuring six m
   - Set hours/minutes/seconds
   - Start countdown with Resume button
 
-## Code Structure
-
-```
-Interface1_Project/
-├── main.c                  # Core application logic
-├── timer.[c/h]             # Timer1 CTC mode configuration
-├── interrupts.[c/h]        # External interrupt handlers
-├── seven_segment.[c/h]     # Display driver for multiplexed segments
-├── buttons.[c/h]           # Button input handling
-└── buzzer.[c/h]            # Alarm control
-```
 
 ## Pin Configuration
 
